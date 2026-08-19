@@ -738,8 +738,6 @@
 
     if (category === 'treasure' || category === 'scrap') {
       drawDiamondShape(info.ctx, cx, localY, fillColor);
-      if (category === 'treasure') drawX(info.ctx, cx, localY);
-      else drawO(info.ctx, cx, localY);
     } else {
       const cells = getRegionCells(row, col);
       cells.forEach(({ info: cellInfo, x, y }) => drawDiamondShape(cellInfo.ctx, x, y, fillColor));
