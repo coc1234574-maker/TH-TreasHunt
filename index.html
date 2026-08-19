@@ -354,7 +354,7 @@
     appId: "1:694016583596:web:6c7cdbcb9f8a1b34da3c09",
     measurementId: "G-YDZQEJWS4C"
   };
-  
+
   const USE_FIREBASE = firebaseConfig.apiKey !== 'YOUR_API_KEY';
   const syncStatus = document.getElementById('syncStatus');
 
@@ -572,15 +572,33 @@
     return cells;
   }
 
+  function drawPreview(centerRow, centerCol) {
+    const category = selectedTags.has('treasure') ? 'treasure'
+      : selectedTags.has('scrap') ? 'scrap'
+      : 'region'; // none or directional — same full-region preview shape
+
+    if (category === 'treasure' || category === 'scrap') {
+      const tIdx = Math.floor(centerRow / TILE_ROWS);
+      const info = tiles[tIdx];
+      const localY = (centerRow - info.rowStart) * HH + HH;
+      const { x } = centerOfGlobal(centerRow, centerCol);
+      drawDiamondShape(info.octx, x, localY, category === 'treasure' ? FILL_TREASURE : FILL_SCRAP);
+      highlightedTiles.add(tIdx);
+      pendingCells = [{ info, x, y: localY }];
+    } else {
+      pendingCells = getRegionCells(centerRow, centerCol);
+      pendingCells.forEach(({ info, x, y }) => {
+        drawDiamondShape(info.octx, x, y, FILL_PURPLE);
+        highlightedTiles.add(tiles.indexOf(info));
+      });
+    }
+  }
+
   function highlightRegion(centerRow, centerCol) {
     clearHighlights();
     pendingCenter = { row: centerRow, col: centerCol };
-    pendingCells = getRegionCells(centerRow, centerCol);
-    pendingCells.forEach(({ info, x, y }) => {
-      drawDiamondShape(info.octx, x, y, FILL_PURPLE);
-      highlightedTiles.add(tiles.indexOf(info));
-    });
     resetTagSelection();
+    drawPreview(centerRow, centerCol);
     showActionPanel(true);
   }
 
@@ -617,6 +635,17 @@
       }
     }
     refreshTagButtons();
+
+    // Live-update the preview shape to match what Dig will actually apply
+    if (pendingCenter) {
+      const { row, col } = pendingCenter;
+      highlightedTiles.forEach((idx) => {
+        const info = tiles[idx];
+        info.octx.clearRect(0, 0, info.overlay.width, info.overlay.height);
+      });
+      highlightedTiles.clear();
+      drawPreview(row, col);
+    }
   }
 
   function refreshTagButtons() {
@@ -693,6 +722,8 @@
 
   // Fills a region permanently (used both for a live Dig and for replaying
   // saved records on page load) and draws the matching icon if tagged.
+  // Treasure/Scrap only color the exact clicked diamond; None/Directional
+  // color the whole dig region.
   function applyDig(row, col, tags) {
     const category = categoryOf(tags);
     const fillColor = category === 'none' ? FILL_BLACK
@@ -700,17 +731,19 @@
       : category === 'scrap' ? FILL_SCRAP
       : FILL_PURPLE;
 
-    const cells = getRegionCells(row, col);
-    cells.forEach(({ info, x, y }) => drawDiamondShape(info.ctx, x, y, fillColor));
+    const tIdx = Math.floor(row / TILE_ROWS);
+    const info = tiles[tIdx];
+    const localY = (row - info.rowStart) * HH + HH;
+    const { x: cx } = centerOfGlobal(row, col);
 
-    if (category !== 'none') {
-      const { x: cx } = centerOfGlobal(row, col);
-      const tIdx = Math.floor(row / TILE_ROWS);
-      const info = tiles[tIdx];
-      const localY = (row - info.rowStart) * HH + HH;
+    if (category === 'treasure' || category === 'scrap') {
+      drawDiamondShape(info.ctx, cx, localY, fillColor);
       if (category === 'treasure') drawX(info.ctx, cx, localY);
-      else if (category === 'scrap') drawO(info.ctx, cx, localY);
-      else drawFlag(info.ctx, cx, localY);
+      else drawO(info.ctx, cx, localY);
+    } else {
+      const cells = getRegionCells(row, col);
+      cells.forEach(({ info: cellInfo, x, y }) => drawDiamondShape(cellInfo.ctx, x, y, fillColor));
+      if (category === 'directional') drawFlag(info.ctx, cx, localY);
     }
   }
 
@@ -798,6 +831,15 @@
     }
     refreshTagButtons();
     digBtn.textContent = 'Update';
+
+    // Match the preview shape to the pre-selected tags (e.g. shrink to a
+    // single diamond immediately if editing a Treasure/Scrap tag)
+    highlightedTiles.forEach((idx) => {
+      const info = tiles[idx];
+      info.octx.clearRect(0, 0, info.overlay.width, info.overlay.height);
+    });
+    highlightedTiles.clear();
+    drawPreview(row, col);
   });
 
   document.getElementById('viewRemoveBtn').addEventListener('click', () => {
